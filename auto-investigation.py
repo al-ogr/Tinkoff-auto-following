@@ -8,6 +8,7 @@ import numpy as np
 import math
 
 from tinkoff.invest import Client, SecurityTradingStatus, Account
+from tinkoff.invest import OrderExecutionReportStatus, OrderType, OrderDirection
 from tinkoff.invest.services import InstrumentsService
 from tinkoff.invest.utils import quotation_to_decimal
 
@@ -83,20 +84,24 @@ def main():
                                                       account_target,
                                                       df_dict_instr)
             # Сравнение исходного и целевого счетов и вычисление разницы
-            df_for_buy, df_for_sale = get_account_difference(df_account_source,
+            df_for_buy, df_for_sell = get_account_difference(df_account_source,
                                                              df_account_target,
                                                              ratio_account,
                                                              df_dict_instr)
             # Выполнение заданий на покупку/продажу по рынку
-            # Продажа
-            
-            # Покупка
-            
-            
-            
-            
-            # Вывод на экран
-            if not was_printing or (df_for_buy.shape[0] > 0 and df_for_sale.shape[0] > 0):
+            df_not_sell = start_deal_tasks(client_target,
+                                           account_target,
+                                           df_for_sell,
+                                           False)
+            # Выполнение заданий на покупку/продажу по рынку
+            df_not_buy = start_deal_tasks(client_target,
+                                          account_target,
+                                          df_for_buy,
+                                          True)
+            # Если есть невыполненные задания на покупку/продажу - вывод на экран
+            if not was_printing \
+               or (df_not_buy.shape[0] > 0 or df_not_sell.shape[0] > 0) \
+               or (df_for_buy.shape[0] > 0 or df_for_sell.shape[0] > 0):
                 was_printing = True
                 # Очистка экрана
                 os.system(clr_command)
@@ -104,10 +109,10 @@ def main():
                 print(df_account_source.sort_values(by=['Тип актива', 'Наименование'], ignore_index=True))
                 print('Целевой', '='*72)
                 print(df_account_target.sort_values(by=['Тип актива', 'Наименование'], ignore_index=True))
-                print('Задание на покупку', '='*61)
-                print(df_for_buy)
-                print('Задание на продажу', '='*61)
-                print(df_for_sale)
+                print('Невыполненные задания на покупку', '='*47)
+                print(df_not_buy if not df_not_buy.empty else 'отсутствуют')
+                print('Невыполненные задания на продажу', '='*47)
+                print(df_not_sell if not df_not_sell.empty else 'отсутствуют')
             # Ожидание
             time.sleep(period_reload)
 
@@ -177,8 +182,9 @@ def get_account_difference(df_account_source: pd.DataFrame,
             pd.DataFrame: задание на покупку
             pd.DataFrame: задание на продажу
     '''
+    
     df_for_buy = pd.DataFrame(columns=['id', 'Количество лотов', 'Тип актива'])
-    df_for_sale = pd.DataFrame(columns=['id', 'Количество лотов', 'Тип актива'])
+    df_for_sell = pd.DataFrame(columns=['id', 'Количество лотов', 'Тип актива'])
     # Удаляем из аккаунтов rub
     df_account_source = df_account_source.drop(df_account_source[df_account_source['id'] == 'rub'].index.tolist(), axis=0)
     df_account_target = df_account_target.drop(df_account_target[df_account_target['id'] == 'rub'].index.tolist(), axis=0)
@@ -206,30 +212,92 @@ def get_account_difference(df_account_source: pd.DataFrame,
             if count_lot_source > count_lot_target:
                 df_for_buy = pd.concat([df_for_buy,
                                         pd.DataFrame({'id': [df_account_source['id'].loc[i]],
-                                                    'Количество лотов': [count_lot_source - count_lot_target],
-                                                    'Тип актива': [df_account_source['Тип актива'].loc[i]]})],
+                                                      'Количество лотов': [count_lot_source - count_lot_target],
+                                                      'Тип актива': [df_account_source['Тип актива'].loc[i]]})],
                                                     ignore_index=True)
             elif count_lot_source < count_lot_target:
-                df_for_sale = pd.concat([df_for_sale,
+                df_for_sell = pd.concat([df_for_sell,
                                          pd.DataFrame({'id': [df_account_source['id'].loc[i]],
-                                                      'Количество лотов': [count_lot_target - count_lot_source],
-                                                      'Тип актива': [df_account_source['Тип актива'].loc[i]]})],
+                                                       'Количество лотов': [count_lot_target - count_lot_source],
+                                                       'Тип актива': [df_account_source['Тип актива'].loc[i]]})],
                                                       ignore_index=True)
                 
-    # Активы, которых нет на исходном счете и есть на целевом попадают в sale
+    # Активы, которых нет на исходном счете и есть на целевом попадают в sell
     for i in df_account_target.index.to_list():
         # Активы, которые есть на исходном счете и нет на целевом попадают в buy
         id_target = df_account_target['id'].loc[i]
         if df_account_source[df_account_source['id'] == id_target].shape[0] == 0:
-            df_for_sale = pd.concat([df_for_sale,
+            df_for_sell = pd.concat([df_for_sell,
                                      pd.DataFrame({'id': [df_account_target['id'].loc[i]],
                                                    'Количество лотов': [df_account_target['Количество'].loc[i]],
                                                    'Тип актива': [df_account_target['Тип актива'].loc[i]]})],
                                                   ignore_index=True)
     # Очистка от нулевых значений (требуется, если коэффициент ratio_account < 1)
-    df_for_sale = df_for_sale[df_for_sale['Количество лотов'] > 0]
+    df_for_sell = df_for_sell[df_for_sell['Количество лотов'] > 0]
     df_for_buy = df_for_buy[df_for_buy['Количество лотов'] > 0]
-    return (df_for_buy, df_for_sale)
+    return (df_for_buy, df_for_sell)
+    
+    
+def start_deal_tasks(client: Client, 
+                     account: Account,
+                     df_for_deal: pd.DataFrame,
+                     buy_sell: bool) -> pd.DataFrame:
+    ''' Функция исполнения заданий на покупку/продажу, возвращается
+        список неисполненных заданий в формате pandas.DataFrame.
+       
+       Args:
+        client (tinkoff.invest.Client):   клиент подключения TINKOFF INVEST API.
+        account (tinkoff.invest.Account): счет TINKOFF INVEST API.
+        df_for_deal (pd.DataFrame): задания на покупку
+        buy_sell (bool): задания на продажу
+
+        Returns:
+            pd.DataFrame: неисполненные задания
+    '''
+    
+    df_not_deal = pd.DataFrame(columns=['id', 'Количество лотов', 'Сообщение'])
+    # Продажа
+    for i in df_for_deal.index.to_list():
+        # Получение статуса торговли инструментом, 
+        # доступности исполнения заявки по рынку
+        resp_status = client.market_data.get_trading_status(figi=df_for_deal['id'].loc[i])
+        trading_status = resp_status.trading_status
+        may_market = resp_status.market_order_available_flag
+        if may_market and trading_status == SecurityTradingStatus.SECURITY_TRADING_STATUS_NORMAL_TRADING:
+            #===================================================================================================
+            try:
+                # Исполнение ордера
+                order_response = client.orders.post_order(quantity=df_for_deal['Количество лотов'].loc[i],
+                                                          direction=OrderDirection.ORDER_DIRECTION_BUY if buy_sell else OrderDirection.ORDER_DIRECTION_SELL,
+                                                          account_id=account.id,
+                                                          order_type=OrderType.ORDER_TYPE_MARKET,
+                                                          instrument_id=df_for_deal['id'].loc[i])
+                # Получение статуса, сообщения
+                report_status, report_message = order_response.execution_report_status, order_response.message
+                # Если ордер не был исполнен, добавляем в неисполненные задания
+                if report_status != OrderExecutionReportStatus.EXECUTION_REPORT_STATUS_FILL:
+                    df_not_deal = pd.concat([df_not_deal,
+                                             pd.DataFrame({'id': [df_for_deal['id'].loc[i]],
+                                                           'Количество лотов': [df_for_deal['Количество лотов'].loc[i]],
+                                                           'Сообщение': [f'Статус: {report_status}, сообщение: {report_message}']})],
+                                                          ignore_index=True)
+            except Exception as e:
+                # Обработка исключений с более детальной информацией.
+                raise RuntimeError(f"Ошибка при размещении ордера для '{df_for_deal['id'].loc[i]}'. {e}.")
+            #===================================================================================================
+        elif not may_market:
+            df_not_deal = pd.concat([df_not_deal,
+                                     pd.DataFrame({'id': [df_for_deal['id'].loc[i]],
+                                                   'Количество лотов': [df_for_deal['Количество лотов'].loc[i]],
+                                                   'Сообщение': ['Недоступно выставления рыночной заявки']})],
+                                                  ignore_index=True)
+        else:
+            df_not_deal = pd.concat([df_not_deal,
+                                     pd.DataFrame({'id': [df_for_deal['id'].loc[i]],
+                                                   'Количество лотов': [df_for_deal['Количество лотов'].loc[i]],
+                                                   'Сообщение': ['Статус торгов отличен от нормального']})],
+                                                  ignore_index=True)
+    return df_not_deal
     
 
 if __name__ == "__main__":
