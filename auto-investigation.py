@@ -301,8 +301,12 @@ def start_deal_tasks(client: Client,
     
 
 if __name__ == "__main__":
-    try:
-        main()
-    except KeyboardInterrupt:
-        print('Работа скрипта остановлена...')
-        
+    while True:
+        try:
+            try:
+                main()
+            except KeyboardInterrupt:
+                print('Работа скрипта остановлена...')
+                break
+        except Exception:
+            continue
