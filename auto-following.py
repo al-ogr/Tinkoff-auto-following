@@ -309,4 +309,5 @@ if __name__ == "__main__":
                 print('Работа скрипта остановлена...')
                 break
         except Exception:
+            time.sleep(period_reload)
             continue
