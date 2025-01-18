@@ -98,11 +98,20 @@ def main():
                                           account_target,
                                           df_for_buy,
                                           True)
+            # Считывание состояния целевого портфеля после выполнения заданий 
+            # на покупку/продажу перед выводом на экран
+            df_account_target.drop(df_account_source.index, inplace=True)
+            df_account_target = position_to_dataframe(client_target, 
+                                                      account_target,
+                                                      df_dict_instr)
             # Если есть невыполненные задания на покупку/продажу - вывод на экран
             if not was_printing \
                or (df_not_buy.shape[0] > 0 or df_not_sell.shape[0] > 0) \
                or (df_for_buy.shape[0] > 0 or df_for_sell.shape[0] > 0):
                 was_printing = True
+                if (df_not_buy.shape[0] > 0 or df_not_sell.shape[0] > 0) \
+                   or (df_for_buy.shape[0] > 0 or df_for_sell.shape[0] > 0):
+                       was_printing = False
                 # Очистка экрана
                 os.system(clr_command)
                 print('Исходный', '='*70)
